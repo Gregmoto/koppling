@@ -1,0 +1,384 @@
+// Koppling - Multi-Tenant SaaS Platform
+// Database Schema for Fortnox ↔ Shopify Integration
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ==============================================================================
+// ENUMS
+// ==============================================================================
+
+enum UserRole {
+  platform_admin
+  tenant_owner
+  tenant_admin
+  tenant_viewer
+}
+
+enum UserStatus {
+  pending
+  active
+  disabled
+}
+
+enum TenantStatus {
+  pending
+  active
+  disabled
+}
+
+enum SubscriptionStatus {
+  active
+  past_due
+  canceled
+  incomplete
+}
+
+enum IntegrationStatus {
+  connected
+  disconnected
+  expired
+}
+
+enum ProductStatus {
+  active
+  draft
+  archived
+}
+
+enum SyncJobType {
+  orders
+  products
+  fortnox
+  webhooks
+  rollback
+}
+
+enum SyncJobStatus {
+  running
+  success
+  failed
+  skipped
+}
+
+enum BlogPostStatus {
+  draft
+  published
+}
+
+enum ChangelogCategory {
+  feature
+  improvement
+  bugfix
+  security
+}
+
+// ==============================================================================
+// TABLES
+// ==============================================================================
+
+// 1. Tenants (Companies/Workspaces)
+model Tenant {
+  id           String       @id @default(uuid())
+  companyName  String       @map("company_name")
+  orgNr        String?      @map("org_nr")
+  address      String?
+  postalCode   String?      @map("postal_code")
+  city         String?
+  phone        String?
+  status       TenantStatus @default(pending)
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  // Relations
+  users                   User[]
+  billingSubscription     BillingSubscription?
+  tenantOnboarding        TenantOnboarding?
+  fortnoxIntegration      FortnoxIntegration?
+  shopifyStores           ShopifyStore[]
+  syncSettings            SyncSettings?
+  orders                  Order[]
+  products                Product[]
+  syncJobs                SyncJob[]
+  auditLogs               AuditLog[]
+
+  @@map("tenants")
+}
+
+// 2. Users
+model User {
+  id           String     @id @default(uuid())
+  tenantId     String     @map("tenant_id")
+  name         String
+  email        String     @unique
+  phone        String?
+  role         UserRole
+  status       UserStatus @default(pending)
+  passwordHash String     @map("password_hash")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  // Relations
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  auditLogs AuditLog[]
+
+  @@index([tenantId])
+  @@index([email])
+  @@map("users")
+}
+
+// 3. Billing Subscriptions
+model BillingSubscription {
+  id                   String             @id @default(uuid())
+  tenantId             String             @unique @map("tenant_id")
+  stripeCustomerId     String?            @map("stripe_customer_id")
+  stripeSubscriptionId String?            @map("stripe_subscription_id")
+  status               SubscriptionStatus?
+  currentPeriodEnd     DateTime?          @map("current_period_end")
+  createdAt            DateTime           @default(now()) @map("created_at")
+  updatedAt            DateTime           @updatedAt @map("updated_at")
+
+  // Relations
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([stripeCustomerId])
+  @@index([status])
+  @@map("billing_subscriptions")
+}
+
+// 4. Tenant Onboarding
+model TenantOnboarding {
+  id                    String   @id @default(uuid())
+  tenantId              String   @unique @map("tenant_id")
+  fortnoxConnected      Boolean  @default(false) @map("fortnox_connected")
+  shopifyStoreAdded     Boolean  @default(false) @map("shopify_store_added")
+  firstSyncCompleted    Boolean  @default(false) @map("first_sync_completed")
+  webshopKundConfigured Boolean  @default(false) @map("webshop_kund_configured")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("tenant_onboarding")
+}
+
+// 5. Fortnox Integration
+model FortnoxIntegration {
+  id                 String            @id @default(uuid())
+  tenantId           String            @unique @map("tenant_id")
+  status             IntegrationStatus @default(disconnected)
+  accessTokenSecret  String?           @map("access_token_secret") @db.Text
+  refreshTokenSecret String?           @map("refresh_token_secret") @db.Text
+  expiresAt          DateTime?         @map("expires_at")
+  connectedAt        DateTime?         @map("connected_at")
+  createdAt          DateTime          @default(now()) @map("created_at")
+  updatedAt          DateTime          @updatedAt @map("updated_at")
+
+  // Relations
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("integrations_fortnox")
+}
+
+// 6. Shopify Stores
+model ShopifyStore {
+  id                String            @id @default(uuid())
+  tenantId          String            @map("tenant_id")
+  storeName         String            @map("store_name")
+  shopDomain        String            @map("shop_domain")
+  status            IntegrationStatus @default(disconnected)
+  accessTokenSecret String?           @map("access_token_secret") @db.Text
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+
+  // Relations
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orders   Order[]
+  products Product[]
+
+  @@unique([tenantId, shopDomain])
+  @@index([tenantId])
+  @@map("integrations_shopify_stores")
+}
+
+// 7. Sync Settings
+model SyncSettings {
+  id                    String   @id @default(uuid())
+  tenantId              String   @unique @map("tenant_id")
+  enabled               Boolean  @default(true)
+  intervalMinutes       Int      @default(60) @map("interval_minutes")
+  invoiceNameOverride   String   @default("Webshop Kund") @map("invoice_name_override")
+  skuMappingRule        String   @default("Use SKU as primary key") @map("sku_mapping_rule") @db.Text
+  vatHandlingMode       String   @default("standard_25") @map("vat_handling_mode")
+  shippingArticleNumber String?  @map("shipping_article_number")
+  paymentMethodMapping  Json?    @map("payment_method_mapping")
+  customerTypeDefault   String   @default("Webshop Kund") @map("customer_type_default")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("sync_settings")
+}
+
+// 8. Orders
+model Order {
+  id                 String       @id @default(uuid())
+  tenantId           String       @map("tenant_id")
+  shopifyStoreId     String       @map("shopify_store_id")
+  shopifyOrderId     String       @map("shopify_order_id")
+  orderNumber        String       @map("order_number")
+  status             String?
+  financialStatus    String?      @map("financial_status")
+  fulfillmentStatus  String?      @map("fulfillment_status")
+  customerRef        String?      @map("customer_ref")
+  totalAmount        Decimal?     @map("total_amount") @db.Decimal(10, 2)
+  currency           String       @default("SEK")
+  rawJson            Json?        @map("raw_json")
+  createdAt          DateTime     @default(now()) @map("created_at")
+  updatedAt          DateTime     @updatedAt @map("updated_at")
+
+  // Relations
+  tenant        Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  shopifyStore  ShopifyStore @relation(fields: [shopifyStoreId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, shopifyStoreId, shopifyOrderId])
+  @@index([tenantId])
+  @@index([shopifyStoreId])
+  @@index([orderNumber])
+  @@map("orders")
+}
+
+// 9. Products
+model Product {
+  id               String        @id @default(uuid())
+  tenantId         String        @map("tenant_id")
+  shopifyStoreId   String        @map("shopify_store_id")
+  shopifyProductId String        @map("shopify_product_id")
+  sku              String?
+  title            String
+  status           ProductStatus @default(active)
+  price            Decimal?      @db.Decimal(10, 2)
+  inventory        Int?
+  rawJson          Json?         @map("raw_json")
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+
+  // Relations
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  shopifyStore ShopifyStore @relation(fields: [shopifyStoreId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, shopifyStoreId, shopifyProductId])
+  @@index([tenantId])
+  @@index([shopifyStoreId])
+  @@index([sku])
+  @@map("products")
+}
+
+// 10. Sync Jobs
+model SyncJob {
+  id                 String        @id @default(uuid())
+  tenantId           String        @map("tenant_id")
+  type               SyncJobType
+  status             SyncJobStatus @default(running)
+  startedAt          DateTime?     @map("started_at")
+  finishedAt         DateTime?     @map("finished_at")
+  createdCount       Int           @default(0) @map("created_count")
+  updatedCount       Int           @default(0) @map("updated_count")
+  rateLimitInfoJson  Json?         @map("rate_limit_info_json")
+  errorText          String?       @map("error_text") @db.Text
+  summaryJson        Json?         @map("summary_json")
+  createdAt          DateTime      @default(now()) @map("created_at")
+
+  // Relations
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
+  @@map("sync_jobs")
+}
+
+// 11. Platform Settings (Single row table for admin settings)
+model PlatformSettings {
+  id                         String   @id @default(uuid())
+  fortnoxClientIdSecret      String?  @map("fortnox_client_id_secret") @db.Text
+  fortnoxClientSecretSecret  String?  @map("fortnox_client_secret_secret") @db.Text
+  fortnoxRedirectUrl         String?  @map("fortnox_redirect_url")
+  stripeSecretKeySecret      String?  @map("stripe_secret_key_secret") @db.Text
+  stripeWebhookSecretSecret  String?  @map("stripe_webhook_secret_secret") @db.Text
+  ga4MeasurementId           String?  @map("ga4_measurement_id")
+  siteTitle                  String?  @map("site_title")
+  siteMetaDescription        String?  @map("site_meta_description") @db.Text
+  createdAt                  DateTime @default(now()) @map("created_at")
+  updatedAt                  DateTime @updatedAt @map("updated_at")
+
+  @@map("platform_settings")
+}
+
+// 12. Blog Posts
+model BlogPost {
+  id            String          @id @default(uuid())
+  title         String
+  slug          String          @unique
+  excerpt       String?         @db.Text
+  coverImageUrl String?         @map("cover_image_url") @db.Text
+  contentHtml   String?         @map("content_html") @db.Text
+  status        BlogPostStatus  @default(draft)
+  publishedAt   DateTime?       @map("published_at")
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([publishedAt])
+  @@map("blog_posts")
+}
+
+// 13. Audit Log
+model AuditLog {
+  id           String   @id @default(uuid())
+  tenantId     String?  @map("tenant_id")
+  userId       String?  @map("user_id")
+  entityType   String?  @map("entity_type")
+  entityId     String?  @map("entity_id")
+  action       String?
+  changesJson  Json?    @map("changes_json")
+  source       String?
+  ipAddress    String?  @map("ip_address")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  // Relations
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([entityType])
+  @@index([createdAt])
+  @@map("audit_log")
+}
+
+// 14. Changelog Entries
+model ChangelogEntry {
+  id          String            @id @default(uuid())
+  title       String
+  description String?           @db.Text
+  releaseDate DateTime          @map("release_date") @db.Date
+  version     String?
+  category    ChangelogCategory
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+
+  @@index([releaseDate])
+  @@index([category])
+  @@map("changelog_entries")
+}
