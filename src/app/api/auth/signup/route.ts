@@ -81,8 +81,8 @@ export async function POST(request: Request) {
         data: {
           tenantId: tenant.id,
           fortnoxConnected: false,
-          shopifyConnected: false,
-          syncSettingsConfigured: false,
+          shopifyStoreAdded: false,
+          webshopKundConfigured: false,
           firstSyncCompleted: false
         }
       })
