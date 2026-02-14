@@ -17,14 +17,14 @@ export default function HomePage() {
               <h1 className="text-2xl font-bold text-indigo-600">Koppling</h1>
             </div>
             <div className="flex items-center space-x-4">
-              <Link 
-                href="/auth/signin" 
+              <Link
+                href="/auth/signin"
                 className="text-gray-700 hover:text-indigo-600 px-3 py-2 rounded-md text-sm font-medium"
               >
                 Sign In
               </Link>
-              <Link 
-                href="/auth/signin" 
+              <Link
+                href="/auth/signup"
                 className="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700"
               >
                 Get Started
@@ -45,8 +45,8 @@ export default function HomePage() {
             Koppling is a multi-tenant SaaS platform that enables Swedish businesses to automatically sync orders and products between Shopify stores and Fortnox accounting system.
           </p>
           <div className="mt-10 flex justify-center gap-4">
-            <Link 
-              href="/auth/signin"
+            <Link
+              href="/auth/signup"
               className="bg-indigo-600 text-white px-8 py-3 rounded-lg text-lg font-medium hover:bg-indigo-700 shadow-lg"
             >
               Start Free Trial
@@ -156,8 +156,8 @@ export default function HomePage() {
           <p className="text-xl text-indigo-100 mb-8">
             Start syncing your Shopify orders to Fortnox today.
           </p>
-          <Link 
-            href="/auth/signin"
+          <Link
+            href="/auth/signup"
             className="bg-white text-indigo-600 px-8 py-3 rounded-lg text-lg font-medium hover:bg-gray-100 shadow-lg inline-block"
           >
             Get Started Now
