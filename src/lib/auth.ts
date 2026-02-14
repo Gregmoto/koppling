@@ -52,43 +52,57 @@ export const authOptions: NextAuthOptions = {
       },
 
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) {
-          throw new Error('Missing credentials')
-        }
+        try {
+          if (!credentials?.email || !credentials?.password) {
+            throw new Error('Missing credentials')
+          }
 
-        // Find user by email
-        const user = await prisma.user.findUnique({
-          where: { email: credentials.email },
-          include: { tenant: true }
-        })
+          // Find user by email
+          const user = await prisma.user.findUnique({
+            where: { email: credentials.email },
+            include: { tenant: true }
+          })
 
-        if (!user || !user.passwordHash) {
-          throw new Error('Invalid credentials')
-        }
+          if (!user || !user.passwordHash) {
+            throw new Error('Invalid credentials')
+          }
 
-        // Verify password
-        const isValid = await bcrypt.compare(credentials.password, user.passwordHash)
+          // Verify password
+          const isValid = await bcrypt.compare(credentials.password, user.passwordHash)
 
-        if (!isValid) {
-          throw new Error('Invalid credentials')
-        }
+          if (!isValid) {
+            throw new Error('Invalid credentials')
+          }
 
-        // Check if user is active
-        if (user.status !== 'active') {
-          throw new Error('Account is not active')
-        }
+          // Check if user is active
+          if (user.status !== 'active') {
+            throw new Error('Account is not active')
+          }
 
-        // Check if tenant is active (except for platform admins)
-        if (user.role !== 'platform_admin' && user.tenant?.status !== 'active') {
-          throw new Error('Account is not active')
-        }
+          // Check if tenant is active (except for platform admins)
+          if (user.role !== 'platform_admin' && user.tenant?.status !== 'active') {
+            throw new Error('Account is not active')
+          }
 
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          role: user.role,
-          tenantId: user.tenantId
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            role: user.role,
+            tenantId: user.tenantId
+          }
+        } catch (error: any) {
+          // Log error for debugging but don't expose technical details
+          console.error('Auth error:', error)
+
+          // Return user-friendly error messages
+          if (error.message && !error.code) {
+            // Application errors (Invalid credentials, Account not active, etc.)
+            throw new Error(error.message)
+          }
+
+          // Database or technical errors
+          throw new Error('Unable to sign in. Please try again later.')
         }
       }
     })

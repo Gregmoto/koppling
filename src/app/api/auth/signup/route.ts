@@ -97,10 +97,27 @@ export async function POST(request: Request) {
       tenantId: result.tenant.id
     })
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Signup error:', error)
+
+    // Handle specific Prisma errors
+    if (error.code === 'P2002') {
+      return NextResponse.json(
+        { error: 'Email already registered' },
+        { status: 409 }
+      )
+    }
+
+    // Don't expose database connection errors to users
+    if (error.code?.startsWith('P1')) {
+      return NextResponse.json(
+        { error: 'Service temporarily unavailable. Please try again later.' },
+        { status: 503 }
+      )
+    }
+
     return NextResponse.json(
-      { error: 'An error occurred during registration' },
+      { error: 'An error occurred during registration. Please try again.' },
       { status: 500 }
     )
   }
