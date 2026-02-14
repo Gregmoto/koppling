@@ -81,7 +81,14 @@ export default withAuth(
   },
   {
     callbacks: {
-      authorized: ({ token }) => !!token,
+      authorized: ({ token, req }) => {
+        // Allow public routes without authentication
+        if (isPublicRoute(req.nextUrl.pathname)) {
+          return true
+        }
+        // All other routes require authentication
+        return !!token
+      },
     },
   }
 )
